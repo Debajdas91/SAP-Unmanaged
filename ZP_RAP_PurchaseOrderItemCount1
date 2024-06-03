@@ -1,0 +1,16 @@
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: 'Help view for first purchase order item'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType:{
+    serviceQuality: #X,
+    sizeCategory: #S,
+    dataClass: #MIXED
+}
+define view entity ZP_RAP_PurchaseOrderItemCount1 as select from I_PurchaseOrderItemAPI01{
+    PurchaseOrder,
+    min(PurchaseOrderItem) as FirstPurchaseOrderItem
+    
+}
+group by PurchaseOrder
+having count(*) = 1;
