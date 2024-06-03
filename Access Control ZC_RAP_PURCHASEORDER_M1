@@ -1,0 +1,11 @@
+@EndUserText.label: 'Access Control for Purchase Order'
+@MappingRole: true
+define role ZC_RAP_PURCHASEORDER_M1 {
+    grant
+        select
+            on
+                ZC_RAP_PURCHASEORDER_M1
+                    where
+                        inheriting conditions from entity ZI_RAP_PurchaseOrder_M1;
+                        
+}
