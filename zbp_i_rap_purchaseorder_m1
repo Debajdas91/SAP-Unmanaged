@@ -1,0 +1,468 @@
+CLASS lhc_purchaseorder DEFINITION INHERITING FROM cl_abap_behavior_handler.
+
+  PUBLIC SECTION.
+    CLASS-METHODS class_constructor.
+    TYPES tt_return TYPE STANDARD TABLE OF bapiret2.
+    CLASS-METHODS create_po_order IMPORTING VALUE(is_po_entity)      TYPE zi_rap_purchaseorder_m1
+                                            VALUE(iv_test_run)       TYPE abap_bool DEFAULT abap_true
+                                  EXPORTING VALUE(po_header_created) TYPE bapimepoheader
+                                            VALUE(et_return)         TYPE tt_return.
+    CLASS-METHODS delete_purchase_order IMPORTING VALUE(iv_ponumber) TYPE zi_rap_purchaseorder_m1-purchaseorder
+                                                  VALUE(iv_test_run) TYPE boolean DEFAULT abap_true
+                                        EXPORTING VALUE(et_return)   TYPE tt_return.
+  PRIVATE SECTION.
+
+    TYPES: BEGIN OF ts_po_org_data,
+             purch_org TYPE zi_rap_purchaseorder_m-purchasingorganization,
+             pur_group TYPE zi_rap_purchaseorder_m-purchasinggroup,
+             plant     TYPE i_purchaseorderitemapi01-plant,
+           END OF ts_po_org_data.
+
+    METHODS get_instance_authorizations FOR INSTANCE AUTHORIZATION
+      IMPORTING keys REQUEST requested_authorizations FOR purchaseorder RESULT result.
+    METHODS initmaterialrelateddata FOR DETERMINE ON MODIFY
+      IMPORTING keys FOR purchaseorder~initmaterialrelateddata.
+
+    METHODS initorgdata FOR DETERMINE ON MODIFY
+      IMPORTING keys FOR purchaseorder~initorgdata.
+    METHODS validatematerial FOR VALIDATE ON SAVE
+      IMPORTING keys FOR purchaseorder~validatematerial.
+
+    METHODS validatepo FOR VALIDATE ON SAVE
+      IMPORTING keys FOR purchaseorder~validatepo.
+    METHODS lock FOR LOCK
+      IMPORTING keys FOR LOCK purchaseorder.
+    METHODS precheck_create FOR PRECHECK
+      IMPORTING entities FOR CREATE purchaseorder.
+    CLASS-METHODS read_org_data RETURNING VALUE(es_org_data) TYPE ts_po_org_data.
+
+    CLASS-DATA: gt_material_cust TYPE HASHED TABLE OF zi_rap_po_material WITH UNIQUE KEY material.
+    CLASS-METHODS read_supplier_by_mat IMPORTING
+                                         VALUE(iv_material) TYPE zi_rap_purchaseorder_m1-material
+                                       RETURNING
+                                         VALUE(rv_supplier) TYPE zi_rap_purchaseorder_m1-supplier.
+    CLASS-METHODS read_cust_by_mat IMPORTING VALUE(iv_material)      TYPE zi_rap_purchaseorder_m1-material
+                                   EXPORTING VALUE(es_material_cust) TYPE zi_rap_po_material.
+
+
+
+ENDCLASS.
+
+CLASS lhc_purchaseorder IMPLEMENTATION.
+
+  METHOD get_instance_authorizations.
+  read ENTITy in LOCAL MODE ZI_RAP_PurchaseOrder_M1 all FIELDS WITH CORRESPONDING #( keys )
+  result data(lt_po_order).
+
+  if lt_po_order is not INITIAL.
+  loop at lt_po_order ASSIGNING FIELD-SYMBOL(<FS_po_order>).
+    AUTHORITY-CHECK OBJECT 'M_BEST_EKO'
+    ID 'EKORG' FIELD <fs_po_order>-PurchasingOrganization
+    ID 'ACTVT' FIELD '02'.
+    if sy-subrc <> 0.
+
+        append value #( purchaseorder = <fs_po_order>-PurchaseOrder
+                        %delete = if_abap_behv=>auth-unauthorized ) to result.
+        CONTINUE.
+    endif.
+  endloop.
+  endif.
+
+  ENDMETHOD.
+
+  METHOD initmaterialrelateddata.
+    DATA : lv_supplier TYPE lifnr.
+
+    READ ENTITY IN LOCAL MODE zi_rap_purchaseorder_m1
+                   FIELDS ( material )
+                   WITH CORRESPONDING #( keys )
+                   RESULT DATA(lt_po_header).
+
+    IF lt_po_header IS NOT INITIAL.
+
+      LOOP AT lt_po_header INTO DATA(ls_po_header).
+        lv_supplier = read_supplier_by_mat( iv_material = ls_po_header-material  ).
+        IF lv_supplier IS INITIAL.
+          APPEND VALUE #( %tky = ls_po_header-%tky
+                           %state_area = 'SUPPLIER_UNKNOWN') TO reported-purchaseorder.
+
+          APPEND VALUE #( %tky = ls_po_header-%tky ) TO reported-purchaseorder.
+
+          APPEND VALUE #( %tky = ls_po_header-%tky
+                          %msg = NEW zcx_certificate(
+                                         severity = if_abap_behv_message=>severity-error
+                                         textid   = zcx_certificate=>supplier_unknown
+          ) ) TO reported-purchaseorder .
+        ELSE.
+          MODIFY ENTITIES OF zi_rap_purchaseorder_m1 IN LOCAL MODE
+                 ENTITY purchaseorder
+                 UPDATE FROM VALUE #( (  %tky = ls_po_header-%tky
+                                      supplier = lv_supplier
+                                      purchaseorderitem = '10'
+                                      %control-supplier = if_abap_behv=>mk-on
+                                      %control-purchaseorderitem = if_abap_behv=>mk-on
+                                      %control-purchaseorderquantityunit = if_abap_behv=>mk-on
+                                      ) ) .
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+
+
+
+  ENDMETHOD.
+
+  METHOD initorgdata.
+    DATA(ls_read_org_data) = read_org_data( ).
+    MODIFY ENTITIES OF zi_rap_purchaseorder_m1 IN LOCAL MODE
+    ENTITY purchaseorder
+    UPDATE FROM
+    VALUE #( FOR key IN keys ( %tky = key-%tky
+                               purchasingorganization = ls_read_org_data-purch_org
+                               purchasinggroup        = ls_read_org_data-pur_group
+                               plant                  = ls_read_org_data-plant
+                               %control-purchasinggroup = if_abap_behv=>mk-on
+                               %control-purchasingorganization = if_abap_behv=>mk-on
+                               %control-plant           = if_abap_behv=>mk-on ) ) .
+
+  ENDMETHOD.
+
+  METHOD read_org_data.
+    DATA: ls_read_org_data TYPE ts_po_org_data.
+
+    es_org_data-purch_org = 'SE80'.
+    es_org_data-pur_group = 'PP1'.
+    es_org_data-plant     = 'SEF2'.
+  ENDMETHOD.
+
+  METHOD class_constructor.
+    SELECT * FROM zi_rap_po_material INTO TABLE @gt_material_cust.
+    IF gt_material_cust IS NOT INITIAL.
+
+    ENDIF.
+  ENDMETHOD.
+
+  METHOD read_supplier_by_mat.
+    read_cust_by_mat(
+      EXPORTING
+        iv_material      = iv_material
+      IMPORTING
+        es_material_cust = DATA(ls_material_cust)
+    ).
+    rv_supplier = ls_material_cust-supplier.
+  ENDMETHOD.
+
+  METHOD read_cust_by_mat.
+    es_material_cust = VALUE #( gt_material_cust[ material = iv_material ] OPTIONAL ) .
+  ENDMETHOD.
+
+  METHOD create_po_order.
+    DATA: ls_po_header   TYPE bapimepoheader,
+          ls_x_po_header TYPE bapimepoheaderx,
+          lt_po_item     TYPE STANDARD TABLE OF bapimepoitem,
+          ls_po_item     LIKE LINE OF lt_po_item,
+          lt_x_po_item   TYPE STANDARD TABLE OF bapimepoitemx.
+
+    ls_po_header = CORRESPONDING #( is_po_entity ).
+    ls_po_item    = CORRESPONDING #( is_po_entity ).
+
+    ls_x_po_header-vendor = abap_true.
+    ls_x_po_header-purch_org = abap_true.
+    ls_x_po_header-pur_group = abap_true.
+
+    ls_po_item-net_price = '1.0'.
+    APPEND ls_po_item TO lt_po_item.
+    lt_x_po_item = VALUE #( ( po_item = ls_po_item-po_item
+    net_price = abap_true
+    material = abap_true
+    plant = abap_true
+    quantity = abap_true ) ).
+
+    CALL FUNCTION 'BAPI_PO_CREATE1'
+      EXPORTING
+        poheader  = ls_po_header
+        poheaderx = ls_x_po_header
+      IMPORTING
+        expheader = po_header_created
+      TABLES
+        return    = et_return
+        poitem    = lt_po_item
+        poitemx   = lt_x_po_item.
+
+
+
+
+  ENDMETHOD.
+
+  METHOD validatematerial.
+    READ ENTITIES OF zi_rap_purchaseorder_m1 IN LOCAL MODE
+                    ENTITY purchaseorder
+                    ALL FIELDS WITH CORRESPONDING #( keys )
+                    RESULT DATA(lt_po).
+    LOOP AT lt_po ASSIGNING FIELD-SYMBOL(<fs_po>).
+      read_cust_by_mat(
+        EXPORTING
+          iv_material      = <fs_po>-material
+        IMPORTING
+          es_material_cust = DATA(ls_material_cust)
+      ).
+      IF ls_material_cust IS NOT INITIAL.
+        IF ls_material_cust-isactive EQ abap_false.
+          reported-purchaseorder = VALUE #( BASE reported-purchaseorder ( %tky = <fs_po>-%tky
+                                                                          %element-material = if_abap_behv=>mk-on
+                                                                          %msg = me->new_message(
+                                                                                   id       = 'ZCX_CETIFICATE'
+                                                                                   number   = '005'
+                                                                                   severity = if_abap_behv_message=>severity-error
+                                                                                   v1       = |{ <fs_po>-material ALPHA = OUT }| ) ) )  .
+        ELSE.
+          reported-purchaseorder = VALUE #( BASE reported-purchaseorder ( %tky = <fs_po>-%tky
+                                                                          %element-material = if_abap_behv=>mk-on
+                                                                          %msg = me->new_message(
+                                                                                   id       = 'ZCX_CETIFICATE'
+                                                                                   number   = '006'
+                                                                                   severity = if_abap_behv_message=>severity-error
+                                                                                   v1       = |{ <fs_po>-material ALPHA = OUT }| ) ) )  .
+
+        ENDIF.
+      ENDIF.
+
+    ENDLOOP.
+
+  ENDMETHOD.
+
+  METHOD validatepo.
+    DATA: lv_mandatory_field_miss TYPE boolean.
+
+    READ ENTITIES OF zi_rap_purchaseorder_m1 IN LOCAL MODE
+                   ENTITY purchaseorder
+                   ALL FIELDS WITH CORRESPONDING #( keys )
+                   RESULT DATA(lt_po).
+
+    LOOP AT lt_po ASSIGNING FIELD-SYMBOL(<fs_po>).
+      " Check Mandatory fields are filled or not
+      IF  <fs_po>-orderquantity IS INITIAL.
+        failed-purchaseorder = VALUE #( BASE failed-purchaseorder ( %tky = <fs_po>-%tky
+                                                                           %create = if_abap_behv=>mk-on ) ).
+        reported-purchaseorder = VALUE #( BASE reported-purchaseorder ( %tky = <fs_po>-%tky
+                                                                        %element-orderquantity = if_abap_behv=>mk-on
+                                                                        %msg = NEW zcx_certificate(
+                                                                                   severity = if_abap_behv_message=>severity-error
+                                                                                   textid   = zcx_certificate=>po_error
+
+        ) ) ).
+
+        lv_mandatory_field_miss = abap_true.
+
+      ENDIF.
+      IF <fs_po>-material IS INITIAL.
+        failed-purchaseorder = VALUE #(  BASE failed-purchaseorder ( %tky = <fs_po>-%tky
+                                                                     %create = if_abap_behv=>mk-on ) ).
+        reported-purchaseorder = VALUE #(  BASE reported-purchaseorder ( %tky = <fs_po>-%tky
+                                                                        %element-orderquantity = if_abap_behv=>mk-on
+                                                                        %msg = NEW zcx_certificate(
+                                                                                   severity = if_abap_behv_message=>severity-error
+                                                                                   textid   = zcx_certificate=>mat ) ) ).
+        lv_mandatory_field_miss = abap_true.
+      ENDIF.
+
+      IF lv_mandatory_field_miss = abap_true.
+        CLEAR lv_mandatory_field_miss.
+        CONTINUE.
+      ENDIF.
+
+      create_po_order(
+        EXPORTING
+          is_po_entity      = CORRESPONDING #( <fs_po> )
+          iv_test_run       = abap_true
+        IMPORTING
+          po_header_created = DATA(ls_po_header)
+          et_return         = DATA(lt_return)
+      ).
+      READ TABLE lt_return ASSIGNING FIELD-SYMBOL(<fs_return>) WITH KEY type  = 'E'.
+      IF sy-subrc EQ 0.
+        "Report create operation as failed
+        failed-purchaseorder = VALUE #( BASE failed-purchaseorder
+        ( %tky = <fs_po>-%tky
+        %create = if_abap_behv=>mk-on ) ).
+
+        reported-purchaseorder = VALUE #(  BASE reported-purchaseorder
+                                               FOR r IN lt_return WHERE ( type = 'E' )
+                                               (
+                                                  purchaseorder = <fs_po>-purchaseorder
+                                                  %msg = me->new_message(
+                                                           id       = r-id
+                                                           number   = r-number
+                                                           severity = if_abap_behv_message=>severity-error
+                                                           v1       = r-message_v1
+                                                           v2       = r-message_v2
+                                                           v3       = r-message_v3
+                                                          v4        = r-message
+                                                 )
+                                                )    ) .
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD lock.
+    LOOP AT keys ASSIGNING FIELD-SYMBOL(<fs_keys>).
+      CALL FUNCTION 'ENQUEUE_EMEKABLE'
+        EXPORTING
+          ebeln          = <fs_keys>-purchaseorder
+        EXCEPTIONS
+          foreign_lock   = 1
+          system_failure = 2
+          OTHERS         = 3.
+
+      CASE sy-subrc.
+        WHEN 1.
+          failed-purchaseorder = VALUE #( BASE
+                                                failed-purchaseorder
+                                         ( purchaseorder = <fs_keys>-purchaseorder
+                                            %fail-cause = if_abap_behv=>cause-locked )  ).
+          reported-purchaseorder = VALUE #(
+                                              BASE reported-purchaseorder
+                                              ( purchaseorder = <fs_keys>-purchaseorder
+                                                %msg = new_message(
+                                                id = sy-msgid
+                                                number = sy-msgno
+                                                severity = if_abap_behv_message=>severity-error
+                                                v1 = sy-msgv1
+                                                v2 = sy-msgv2
+                                                v3 = sy-msgv3
+                                                v4 = sy-msgv4 ) ) ).
+        WHEN OTHERS.
+          RAISE SHORTDUMP NEW zcx_certificate(
+            severity = if_abap_behv_message=>severity-error
+            textid = zcx_certificate=>po_error
+            ).
+      ENDCASE.
+
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD delete_purchase_order.
+    DATA: ls_po_header   TYPE bapimepoheader,
+          ls_x_po_header TYPE bapimepoheaderx.
+* Delete means to set a deletion indicator in the purchase order
+    ls_po_header-delete_ind = abap_true.
+    ls_x_po_header-delete_ind = abap_true.
+    CALL FUNCTION 'BAPI_PO_CHANGE'
+      EXPORTING
+        purchaseorder = iv_ponumber
+        poheader      = ls_po_header
+        poheaderx     = ls_x_po_header
+        testrun       = iv_test_run
+      TABLES
+        return        = et_return.
+  ENDMETHOD.
+
+  METHOD precheck_create.
+    DATA(ls_org_data) = read_org_data( ).
+    LOOP AT entities ASSIGNING FIELD-SYMBOL(<fs_po>).
+      AUTHORITY-CHECK OBJECT 'M_BEST_EKO'
+      ID 'EKORG' FIELD ls_org_data-purch_org
+      ID 'ACTVT' FIELD '01'.
+      IF sy-subrc <> 0.
+        failed-purchaseorder = VALUE #( BASE failed-purchaseorder ( %cid = <fs_po>-%cid
+                                                                    %create = if_abap_behv=>auth-unauthorized ) ).
+        reported-purchaseorder = VALUE #(  BASE reported-purchaseorder ( %cid = <fs_po>-%cid
+                                                                    %msg = me->new_message(
+                                                                             id       = 'ZCX_CERTIFICATE'
+                                                                             number   = '006'
+                                                                             severity = if_abap_behv_message=>severity-error
+                                                                           ) ) ).
+
+      ENDIF.
+      CONTINUE.
+    ENDLOOP.
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS lsc_zi_rap_purchaseorder_m1 DEFINITION INHERITING FROM cl_abap_behavior_saver.
+  PROTECTED SECTION.
+
+    METHODS adjust_numbers REDEFINITION.
+
+    METHODS save_modified REDEFINITION.
+
+    METHODS cleanup_finalize REDEFINITION.
+
+ENDCLASS.
+
+CLASS lsc_zi_rap_purchaseorder_m1 IMPLEMENTATION.
+
+* " Read purchase orders based on key values from interaction phase
+  METHOD adjust_numbers.
+    READ ENTITIES OF zi_rap_purchaseorder_m1 IN LOCAL MODE ENTITY purchaseorder ALL FIELDS WITH CORRESPONDING #( mapped-purchaseorder )
+    RESULT DATA(lt_po_orders).
+    LOOP AT lt_po_orders INTO DATA(ls_po_orders).
+
+      lhc_purchaseorder=>create_po_order(
+        EXPORTING
+          is_po_entity      = CORRESPONDING #( ls_po_orders )
+           iv_test_run       = abap_false
+         IMPORTING
+          po_header_created = DATA(ls_po_header)
+          et_return         = DATA(lt_return)
+      ).
+
+      READ TABLE lt_return ASSIGNING FIELD-SYMBOL(<fs_return>) WITH KEY type = 'E'.
+      IF sy-subrc EQ 0.
+        RAISE SHORTDUMP NEW zcx_certificate(
+          severity = if_abap_behv_message=>severity-error
+          textid = zcx_certificate=>po_error
+          ).
+      ELSE.
+        APPEND INITIAL LINE TO mapped-purchaseorder ASSIGNING FIELD-SYMBOL(<fs_purchase_order>).
+        <fs_purchase_order>-%pid = ls_po_orders-%pid.
+        <fs_purchase_order>-purchaseorder = ls_po_header-po_number.
+      ENDIF.
+    ENDLOOP.
+    "Note that the ADJUST_NUMBERS method is already executed after the point of
+    "no return within the save sequence and therefore no error messages can be
+    "reported via the REPORTED parameter. If an error does occur at this point, you
+    "must use RAISE SHORTDUMP to create a dump.
+  ENDMETHOD.
+
+  METHOD save_modified.
+    LOOP AT delete-purchaseorder ASSIGNING FIELD-SYMBOL(<fs_po>).
+      lhc_purchaseorder=>delete_purchase_order(
+        EXPORTING
+          iv_ponumber = <fs_po>-purchaseorder
+          iv_test_run = abap_false
+        IMPORTING
+          et_return   = DATA(lt_return)
+      ).
+
+      READ TABLE lt_return ASSIGNING FIELD-SYMBOL(<fs_return>) WITH KEY type = 'E'.
+      IF sy-subrc EQ 0.
+        RAISE SHORTDUMP NEW zcx_certificate(
+          severity = if_abap_behv_message=>severity-error
+          textid = zcx_certificate=>po_error
+          ).
+      ELSE.
+        reported-purchaseorder = VALUE #( BASE reported-purchaseorder
+ FOR r IN lt_return WHERE ( type = 'I' OR type <> 'W' )
+ ( purchaseorder = <fs_po>-purchaseorder
+ %msg = me->new_message(
+ id = r-id
+ number = r-number
+ severity = COND #( WHEN r-type = 'I' THEN
+ if_abap_behv_message=>severity-information
+ WHEN r-type = 'W' THEN
+ if_abap_behv_message=>severity-warning )
+ v1 = r-message_v1
+ v2 = r-message_v2
+ v3 = r-message_v3
+ v4 = r-message_v4 ) ) ).
+      ENDIF.
+
+    ENDLOOP.
+  ENDMETHOD.
+
+  METHOD cleanup_finalize.
+  ENDMETHOD.
+
+ENDCLASS.
