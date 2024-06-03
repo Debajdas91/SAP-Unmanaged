@@ -1,0 +1,35 @@
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: 'Purchase Order Item Count'
+define root view entity ZI_RAP_PurchaseOrder_M1 
+as select from I_PurchaseOrderItemAPI01 as item
+inner join ZP_RAP_PurchaseOrderItemCount1 as ITEM_CNT
+on item.PurchaseOrder = ITEM_CNT.PurchaseOrder
+inner join zi_rap_po_material1 as PO_MAT
+on PO_MAT.Matnr = item.Material
+association[1] to  I_PurchaseOrderAPI01 as _PurchaseOrder on
+_PurchaseOrder.PurchaseOrder = item.PurchaseOrder
+association[1] to I_PurchaseOrderItemAPI01 as _PURCHASEOrderItem
+on $projection.PurchaseOrderItem = _PURCHASEOrderItem.PurchaseOrderItem
+association[1] to zi_rap_po_material1 as _POMaterial 
+on $projection.Material = _POMaterial.Matnr
+ {
+    key item.PurchaseOrder,
+    _PurchaseOrder.PurchaseOrderType,
+    _PurchaseOrder.PurchaseOrderDate,
+    _PurchaseOrder.PurchasingOrganization,
+    _PurchaseOrder.PurchasingGroup,
+    _PurchaseOrder.Supplier,
+    _PurchaseOrder.CreatedByUser,
+    _PurchaseOrder.CreationDate,
+    _PurchaseOrder.LastChangeDateTime,
+    item.PurchaseOrderItem,
+    item.Material,
+    item.OrderQuantity,
+    item.PurchaseOrderQuantityUnit,
+    item.Plant,
+    _PurchaseOrder,
+    _PURCHASEOrderItem,
+    _POMaterial
+}
+where 
+item.PurchasingDocumentDeletionCode <> 'L'
