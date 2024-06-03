@@ -1,0 +1,36 @@
+@Metadata.layer: #CORE
+@UI.headerInfo: { typeName: 'My purchase order',
+typeNamePlural: 'My purchase orders' }
+annotate entity ZC_RAP_PURCHASEORDER_M1
+    with 
+{
+   
+   @UI.facet: [{ id: 'Identification',
+   type: #IDENTIFICATION_REFERENCE,
+   label: 'Purchase order',
+   position: 10,
+   purpose: #STANDARD }]
+
+   @UI.selectionField: [{ position: 10 }]
+   @UI.lineItem: [{ position: 10 , semanticObject: 'PurchaseOrder' ,semanticObjectAction: 'display' ,
+                    type : #WITH_INTENT_BASED_NAVIGATION , value: '_PurchaseOrder'}]
+   @UI.identification: [{ position: 10 }]
+   @Consumption.semanticObject: 'PurchaseOrder'
+   PurchaseOrder;
+   
+   @UI.selectionField: [{ position: 20 }]
+   @UI.lineItem: [{ position: 20 }]
+   @UI.identification: [{ position: 20 }]
+   PurchaseOrderDate;
+   
+   @UI.selectionField: [{ position: 30 }]
+   @UI.lineItem: [{ position: 30 }]
+   @UI.identification: [{ position: 30 }]
+   Material;
+   
+   @UI.selectionField: [{ position: 40 }]
+   @UI.lineItem: [{ position: 40 }]
+   @UI.identification: [{ position: 40 }]
+   OrderQuantity;
+ 
+}
