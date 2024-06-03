@@ -1,0 +1,25 @@
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: 'Projection view'
+@Metadata.allowExtensions: true
+define root view entity ZC_RAP_PURCHASEORDER_M1 
+ provider contract transactional_query
+as projection on ZI_RAP_PurchaseOrder_M1
+ {
+    key PurchaseOrder,
+    PurchaseOrderType,
+    PurchaseOrderDate,
+    LastChangeDateTime,
+    PurchaseOrderItem,
+    _POMaterial._Material._Text.MaterialName as MaterialName : localized,
+    Material,
+    OrderQuantity,
+    PurchaseOrderQuantityUnit,
+    Plant,
+    /* Associations */
+    _POMaterial,
+    _PurchaseOrder,
+    _PURCHASEOrderItem
+    
+}
+where
+CreatedByUser = $session.user
