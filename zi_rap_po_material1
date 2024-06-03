@@ -1,0 +1,23 @@
+@AbapCatalog.viewEnhancementCategory: [#NONE]
+@AccessControl.authorizationCheck: #CHECK
+@EndUserText.label: 'Rap PO Material'
+@Metadata.ignorePropagatedAnnotations: true
+@ObjectModel.usageType:{
+    serviceQuality: #X,
+    sizeCategory: #S,
+    dataClass: #MIXED
+}
+define view entity zi_rap_po_material1 as select from zrap_a_mat_table 
+association [0..1] to I_Material as _Material on _Material.Material = $projection.Matnr 
+association [0..1] to I_Supplier as _SUPPLIER on _SUPPLIER.Supplier = $projection.Supplier
+{
+    key matnr as Matnr,
+    supplier as Supplier,
+    is_active as IsActive,
+    created_by as CreatedBy,
+    created_at as CreatedAt,
+    last_changed_by as LastChangedBy,
+    last_changed_at as LastChangedAt,
+    _Material,
+    _SUPPLIER
+}
